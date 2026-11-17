@@ -1,0 +1,124 @@
+package com.tsunamimod;
+
+import net.minecraft.client.render.Frustum;
+import net.minecraft.client.render.LightmapTextureManager;
+import net.minecraft.client.render.OverlayTexture;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.VertexConsumer;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.entity.EntityRendererFactory;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.Heightmap;
+import net.minecraft.world.World;
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
+
+/** Desenha a onda como uma malha 3D lisa (superficie curva) usando a textura de agua do jogo. */
+public class TsunamiRenderer extends EntityRenderer<TsunamiEntity> {
+    private static final Identifier TEX = new Identifier("minecraft", "textures/block/water_still.png");
+
+    public TsunamiRenderer(EntityRendererFactory.Context ctx) {
+        super(ctx);
+    }
+
+    @Override
+    public Identifier getTexture(TsunamiEntity entity) {
+        return TEX;
+    }
+
+    @Override
+    public boolean shouldRender(TsunamiEntity entity, Frustum frustum, double x, double y, double z) {
+        return true;
+    }
+
+    @Override
+    public void render(TsunamiEntity e, float yaw, float td, MatrixStack matrices,
+                       VertexConsumerProvider vcp, int light) {
+        Direction dir = e.getWaveDir();
+        Direction lat = dir.rotateYClockwise();
+        int width = e.getWaveWidth();
+        float h = e.getWaveHeight();
+        float thick = h; // profundidade da onda
+        float half = width / 2f;
+        int cols = Math.max(16, width / 2);
+        int ps = WaveProfile.Z.length;
+        World world = e.getWorld();
+        Vec3d pos = e.getLerpedPos(td);
+        float time = e.ticks + td;
+
+        // altura do chao em cada coluna lateral (a onda acompanha o relevo)
+        float[] ground = new float[cols + 1];
+        for (int i = 0; i <= cols; i++) {
+            float lx = -half + width * i / (float) cols;
+            double wx = pos.x + lat.getOffsetX() * lx - dir.getOffsetX() * 0.4 * thick;
+            double wz = pos.z + lat.getOffsetZ() * lx - dir.getOffsetZ() * 0.4 * thick;
+            int bx = MathHelper.floor(wx), bz = MathHelper.floor(wz);
+            float g = (float) (pos.y);
+            if (world.getChunkManager().isChunkLoaded(bx >> 4, bz >> 4)) {
+                g = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, bx, bz);
+            }
+            ground[i] = g - (float) pos.y;
+        }
+        for (int pass = 0; pass < 3; pass++) { // suaviza
+            float[] s = ground.clone();
+            for (int i = 1; i < cols; i++) ground[i] = (s[i - 1] + 2 * s[i] + s[i + 1]) / 4f;
+        }
+
+        float[][] vx = new float[cols + 1][ps];
+        float[][] vy = new float[cols + 1][ps];
+        float[][] vz = new float[cols + 1][ps];
+        float[] lxs = new float[cols + 1];
+        for (int i = 0; i <= cols; i++) {
+            float lx = -half + width * i / (float) cols;
+            lxs[i] = lx;
+            double edge = WaveProfile.edge(lx / Math.max(half, 1f));
+            float wob = 1f + 0.07f * MathHelper.sin(lx * 0.35f + time * 0.12f)
+                    + 0.04f * MathHelper.sin(lx * 0.9f - time * 0.2f);
+            float hh = (float) (h * edge) * wob;
+            for (int j = 0; j < ps; j++) {
+                float zz = WaveProfile.Z[j] * thick * (0.55f + 0.45f * (float) edge);
+                vx[i][j] = lat.getOffsetX() * lx + dir.getOffsetX() * zz;
+                vz[i][j] = lat.getOffsetZ() * lx + dir.getOffsetZ() * zz;
+                vy[i][j] = ground[i] + WaveProfile.Y[j] * hh - 0.8f;
+            }
+        }
+
+        VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityTranslucent(TEX));
+        Matrix4f pm = matrices.peek().getPositionMatrix();
+        Matrix3f nm = matrices.peek().getNormalMatrix();
+        int frame = ((int) (time / 2f)) % 32; // anima a textura (32 frames)
+        int fullBright = LightmapTextureManager.MAX_LIGHT_COORDINATE;
+
+        for (int i = 0; i < cols; i++) {
+            for (int j = 0; j < ps - 1; j++) {
+                quadVertex(vc, pm, nm, vx[i][j], vy[i][j], vz[i][j], lxs[i], j, frame, fullBright);
+                quadVertex(vc, pm, nm, vx[i + 1][j], vy[i + 1][j], vz[i + 1][j], lxs[i + 1], j, frame, fullBright);
+                quadVertex(vc, pm, nm, vx[i + 1][j + 1], vy[i + 1][j + 1], vz[i + 1][j + 1], lxs[i + 1], j + 1, frame, fullBright);
+                quadVertex(vc, pm, nm, vx[i][j + 1], vy[i][j + 1], vz[i][j + 1], lxs[i], j + 1, frame, fullBright);
+            }
+        }
+    }
+
+    private static void quadVertex(VertexConsumer vc, Matrix4f pm, Matrix3f nm, float x, float y, float z,
+                                   float lx, int j, int frame, int light) {
+        float u = lx / 6f;
+        float v = (WaveProfile.LEN[j] * 40f / 6f + frame) / 32f * 1f;
+        // espuma branca perto da crista
+        float f = MathHelper.clamp((WaveProfile.Y[j] - 0.80f) / 0.20f, 0f, 1f);
+        int r = (int) MathHelper.lerp(f, 63, 215);
+        int g = (int) MathHelper.lerp(f, 118, 235);
+        int b = (int) MathHelper.lerp(f, 228, 255);
+        vc.vertex(pm, x, y, z)
+                .color(r, g, b, 235)
+                .texture(u, v)
+                .overlay(OverlayTexture.DEFAULT_UV)
+                .light(light)
+                .normal(nm, 0f, 1f, 0f)
+                .next();
+    }
+}

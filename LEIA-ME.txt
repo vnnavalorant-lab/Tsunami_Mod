@@ -1,0 +1,9 @@
+Tsunami (modelo 3D liso) - Fabric 1.20.1
+
+Compilar: suba o projeto no GitHub; o workflow .github/workflows/build.yml compila sozinho (aba Actions > artefato tsunami-mod).
+
+Comandos (precisa de cheats / OP):
+  /tsunami start [largura] [altura] [distancia]
+  /tsunami stop
+Padrao: 64 de largura, 28 de altura, 200 blocos de distancia.
+A onda nasce 80 blocos na sua frente e vem na sua direcao.
