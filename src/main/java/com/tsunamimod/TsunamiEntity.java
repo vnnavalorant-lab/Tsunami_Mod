@@ -76,16 +76,17 @@ public class TsunamiEntity extends Entity {
         Direction dir = getWaveDir();
         Direction lat = dir.rotateYClockwise();
         int half = getWaveWidth() / 2;
-        double t = getWaveHeight();
-        double ax = getX() + lat.getOffsetX() * half + dir.getOffsetX() * 0.3 * t;
-        double az = getZ() + lat.getOffsetZ() * half + dir.getOffsetZ() * 0.3 * t;
-        double bx = getX() - lat.getOffsetX() * half - dir.getOffsetX() * 1.3 * t;
-        double bz = getZ() - lat.getOffsetZ() * half - dir.getOffsetZ() * 1.3 * t;
+        double h = getWaveHeight();
+        double t = h * WaveProfile.THICK;
+        double ax = getX() + lat.getOffsetX() * half + dir.getOffsetX() * 0.5 * t;
+        double az = getZ() + lat.getOffsetZ() * half + dir.getOffsetZ() * 0.5 * t;
+        double bx = getX() - lat.getOffsetX() * half - dir.getOffsetX() * 2.5 * t;
+        double bz = getZ() - lat.getOffsetZ() * half - dir.getOffsetZ() * 2.5 * t;
         Box box = new Box(ax, getWorld().getBottomY(), az, bx, getWorld().getTopY(), bz);
 
         List<Entity> list = getWorld().getOtherEntities(this, box, e -> !e.isSpectator() && !(e instanceof TsunamiEntity));
         for (Entity e : list) {
-            if (!inside(e, dir, lat, half, t)) continue;
+            if (!inside(e, dir, lat, half, h, t)) continue;
             Vec3d cur = e.getVelocity();
             e.setVelocity(dir.getOffsetX() * 0.55, Math.max(cur.y, 0.12), dir.getOffsetZ() * 0.55);
             e.velocityModified = true;
@@ -96,19 +97,21 @@ public class TsunamiEntity extends Entity {
         }
     }
 
-    private boolean inside(Entity e, Direction dir, Direction lat, int half, double t) {
+    private boolean inside(Entity e, Direction dir, Direction lat, int half, double h, double t) {
         double dx = e.getX() - getX();
         double dz = e.getZ() - getZ();
         double lx = dx * lat.getOffsetX() + dz * lat.getOffsetZ();
         double lz = dx * dir.getOffsetX() + dz * dir.getOffsetZ();
         if (Math.abs(lx) > half) return false;
-        double top = WaveProfile.topN(lz / t);
-        if (top <= 0) return false;
-        double edge = WaveProfile.edge(lx / Math.max(half, 1));
+        double lf = Math.abs(lx) / Math.max(half, 1);
+        double edge = WaveProfile.edge(lf);
+        double bow = 0.25 * t * lf * lf;
+        double zn = (lz + bow) / (t * (0.55 + 0.45 * edge));
         int ground = getWorld().getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES,
                 MathHelper.floor(e.getX()), MathHelper.floor(e.getZ()));
-        double rel = e.getY() - ground;
-        return rel >= -2 && rel <= t * top * edge;
+        double rel = e.getY() - ground + 0.8;
+        if (rel < -2) return false;
+        return WaveProfile.contains(zn, rel / (h * edge));
     }
 
     @Override public boolean shouldRender(double distance) { return true; }

@@ -1,25 +1,36 @@
 package com.tsunamimod;
 
-/** Perfil (corte lateral) da onda, com crista curvada. z = frente da onda (+), y = altura. Valores normalizados. */
+/**
+ * Perfil (corte lateral) da onda, copiado do formato da referencia:
+ * plato largo no topo, crista saliente (lip) e uma face frontal concava (cavidade) embaixo dela.
+ * z = frente da onda (+), y = altura. Valores normalizados (y = 1 e a altura da onda).
+ */
 public final class WaveProfile {
-    // Caminho: base de tras -> topo -> ponta da crista -> embaixo da crista -> face -> base da frente.
+    /** Profundidade da onda = altura * THICK. */
+    public static final float THICK = 0.8f;
+
+    // Caminho: base de tras -> plato -> ponta da crista -> embaixo da crista -> face concava -> base da frente.
     private static final float[][] CTRL = {
-            {-1.20f, 0.00f}, {-0.90f, 0.12f}, {-0.55f, 0.45f}, {-0.25f, 0.82f}, {0.00f, 1.00f},
-            {0.14f, 0.99f}, {0.21f, 0.88f}, {0.12f, 0.76f}, {-0.10f, 0.66f}, {-0.17f, 0.44f},
-            {-0.10f, 0.20f}, {0.00f, 0.00f}
+            {-2.30f, 0.00f}, {-2.00f, 0.10f}, {-1.50f, 0.42f}, {-1.00f, 0.80f}, {-0.55f, 0.98f},
+            {-0.15f, 1.04f}, {0.20f, 1.02f}, {0.36f, 0.94f}, {0.30f, 0.86f}, {0.05f, 0.82f},
+            {-0.25f, 0.76f}, {-0.48f, 0.60f}, {-0.52f, 0.38f}, {-0.40f, 0.17f}, {-0.18f, 0.05f},
+            {0.05f, 0.00f}
     };
     private static final int PER_SEG = 6;
 
     public static final float[] Z;
     public static final float[] Y;
-    /** Comprimento acumulado da curva (para o mapeamento da textura). */
+    /** Comprimento acumulado da curva (mapeamento da textura). */
     public static final float[] LEN;
+    /** Brilho (0..1) de cada ponto: topo claro, parte de baixo da crista escura. */
+    public static final float[] SHADE;
 
     static {
         int n = (CTRL.length - 1) * PER_SEG + 1;
         Z = new float[n];
         Y = new float[n];
         LEN = new float[n];
+        SHADE = new float[n];
         int k = 0;
         for (int i = 0; i < CTRL.length - 1; i++) {
             float[] p0 = CTRL[Math.max(i - 1, 0)];
@@ -40,6 +51,18 @@ public final class WaveProfile {
             float dy = Y[i] - Y[i - 1];
             LEN[i] = LEN[i - 1] + (float) Math.sqrt(dz * dz + dy * dy);
         }
+        // sombreamento assado: normal para fora = (-dy, dz); luz vem de cima e um pouco da frente
+        for (int i = 0; i < n; i++) {
+            int a = Math.max(i - 1, 0), b = Math.min(i + 1, n - 1);
+            double dz = (Z[b] - Z[a]) * THICK;
+            double dy = (Y[b] - Y[a]);
+            double len = Math.sqrt(dz * dz + dy * dy);
+            if (len < 1e-6) { SHADE[i] = 0.8f; continue; }
+            double ny = dz / len;   // componente vertical da normal
+            double nz = -dy / len;  // componente para frente
+            double dot = ny * 0.9 + nz * 0.4;
+            SHADE[i] = (float) (0.50 + 0.50 * Math.max(0.0, Math.min(1.0, dot)));
+        }
     }
 
     private static float cr(float a, float b, float c, float d, float t) {
@@ -47,25 +70,24 @@ public final class WaveProfile {
         return 0.5f * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
     }
 
-    // Envelope do topo (usado para saber se uma entidade esta dentro da onda).
-    private static final float[] TZ = {-1.2f, -0.9f, -0.55f, -0.25f, 0.0f, 0.14f, 0.21f};
-    private static final float[] TY = {0.0f, 0.12f, 0.45f, 0.82f, 1.0f, 0.99f, 0.88f};
-
-    public static double topN(double zn) {
-        if (zn <= TZ[0] || zn >= TZ[TZ.length - 1]) return 0;
-        for (int i = 0; i < TZ.length - 1; i++) {
-            if (zn <= TZ[i + 1]) {
-                double t = (zn - TZ[i]) / (TZ[i + 1] - TZ[i]);
-                return TY[i] + (TY[i + 1] - TY[i]) * t;
-            }
+    /** Ponto (zn, yn) esta dentro do corpo de agua (ray casting no poligono do perfil)? */
+    public static boolean contains(double zn, double yn) {
+        if (yn < 0) return false;
+        boolean in = false;
+        int n = Z.length;
+        for (int i = 0, j = n - 1; i < n; j = i++) {
+            double zi = Z[i], yi = Y[i], zj = Z[j], yj = Y[j];
+            if ((yi > yn) != (yj > yn) && zn < (zj - zi) * (yn - yi) / (yj - yi) + zi) in = !in;
         }
-        return 0;
+        return in;
     }
 
-    /** Fator de altura nas bordas laterais (0 nas pontas, 1 no centro). */
+    /** Fator de altura nas bordas laterais: 1 no meio, cai suavemente ate quase 0 nas pontas. */
     public static double edge(double lf) {
         double a = Math.min(Math.abs(lf), 1.0);
-        return Math.max(0.03, 1.0 - a * a * a);
+        double t = Math.max(0.0, Math.min(1.0, (a - 0.45) / 0.55));
+        double s = t * t * (3 - 2 * t);
+        return Math.max(0.03, 1.0 - s);
     }
 
     private WaveProfile() {}

@@ -38,12 +38,12 @@ public class TsunamiMod implements ModInitializer {
                 dispatcher.register(CommandManager.literal("tsunami")
                         .requires(src -> src.hasPermissionLevel(2))
                         .then(CommandManager.literal("start")
-                                .executes(c -> start(c, 64, 28, 200))
-                                .then(CommandManager.argument("largura", IntegerArgumentType.integer(8, 300))
-                                        .executes(c -> start(c, IntegerArgumentType.getInteger(c, "largura"), 28, 200))
-                                        .then(CommandManager.argument("altura", IntegerArgumentType.integer(4, 100))
+                                .executes(c -> start(c, 200, 60, 300))
+                                .then(CommandManager.argument("largura", IntegerArgumentType.integer(8, 600))
+                                        .executes(c -> start(c, IntegerArgumentType.getInteger(c, "largura"), 60, 300))
+                                        .then(CommandManager.argument("altura", IntegerArgumentType.integer(4, 250))
                                                 .executes(c -> start(c, IntegerArgumentType.getInteger(c, "largura"),
-                                                        IntegerArgumentType.getInteger(c, "altura"), 200))
+                                                        IntegerArgumentType.getInteger(c, "altura"), 300))
                                                 .then(CommandManager.argument("distancia", IntegerArgumentType.integer(10, 1000))
                                                         .executes(c -> start(c, IntegerArgumentType.getInteger(c, "largura"),
                                                                 IntegerArgumentType.getInteger(c, "altura"),
@@ -67,8 +67,8 @@ public class TsunamiMod implements ModInitializer {
             ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
             ServerWorld world = p.getServerWorld();
             Direction facing = p.getHorizontalFacing();
-            // A onda nasce 80 blocos a sua frente e vem na sua direcao.
-            BlockPos o = p.getBlockPos().offset(facing, 80);
+            // A onda nasce a uma distancia proporcional a altura, na sua frente e vem na sua direcao.
+            BlockPos o = p.getBlockPos().offset(facing, (int) (height * 2.5) + 60);
             TsunamiEntity t = new TsunamiEntity(TSUNAMI_ENTITY, world);
             t.setup(width, height, facing.getOpposite(), distance);
             t.setPosition(o.getX() + 0.5, p.getY(), o.getZ() + 0.5);

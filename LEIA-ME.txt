@@ -5,5 +5,5 @@ Compilar: suba o projeto no GitHub; o workflow .github/workflows/build.yml compi
 Comandos (precisa de cheats / OP):
   /tsunami start [largura] [altura] [distancia]
   /tsunami stop
-Padrao: 64 de largura, 28 de altura, 200 blocos de distancia.
-A onda nasce 80 blocos na sua frente e vem na sua direcao.
+Padrao: 200 de largura, 60 de altura, 300 blocos de distancia (largura ate 600, altura ate 250).
+A onda nasce na sua frente (distancia proporcional a altura) e vem na sua direcao.
